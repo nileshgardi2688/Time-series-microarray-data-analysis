@@ -1,0 +1,187 @@
+###########LOCFIT##############
+install.packages("locfit")
+library(locfit)
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%%%%%reduce the list of genes to those with standard deviation above 1
+#These steps excluded those genes which had very low varience "Data.txt" file contains
+#total appr. 7000 genes and 13 time points data (from 0 to 12 hrs)
+
+data<-read.table("Data.txt",header=T)    
+highestvariance2<-as.matrix(data[,-1])
+highestgenenames<-as.matrix(data[,1])
+
+for(i in nrow(highestvariance2):1){
+	if(sd(highestvariance2[i,]) < 1)
+	{
+	highestvariance2 = highestvariance2[-i,];
+	highestgenenames = highestgenenames[-i]
+	}
+}
+highestvariance2<-data.frame(highestvariance2)
+collate_data<-cbind(highestgenenames,highestvariance2)
+write.table(collate_data,"highly variable genes.txt",sep="\t",row.names=FALSE)
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#Initially start with broad range of bandwidth as 1 to 20
+
+highly_var<-as.matrix(read.table("highly variable genes.txt",header=T,row.names=1))
+total_data<-highly_var[1:100,]
+error_mat=matrix(nrow = 20, ncol = ncol(total_data)+1,dimnames=list(c(seq(1,20,length.out=20))))
+time=0:(ncol(total_data)-1)
+for(k in 1:nrow(total_data))      #for a single gene
+{
+var<-0
+     for(h in seq(1,20,length.out=20))         #for bandwidth
+     {
+     var<-var+1
+     one_gene=as.numeric(total_data[k,])
+	for(j in 1:length(one_gene))          #for cross-validation
+	{
+		
+		y=as.numeric(total_data[k,-j])
+		fit=locfit(y~lp(time[-j],h=h,deg=2))
+
+		if(var < 21)
+		{
+		error_mat[var,j]<-((predict(fit,j)-one_gene[j]))^2	
+		}
+		else{break;}
+	}
+	error_mat[var,(ncol(total_data)+1)]<-sum(error_mat[var,-(ncol(total_data)+1)])
+     }
+write.table(error_mat,"error_file.txt",sep="\t",append=TRUE,row.names=FALSE)
+}
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#Some manual work
+#Open error_file in excel.
+#Take a last column of that file (i.e. sum of squared error column)
+#paste in textpad. Replace all any "\n" with "\t".
+#Again replace all "V14" with "\n".
+#Now save that data in separate text file. In 1st column, paste 100 genes names that we
+#"highly variable genes.txt" file. and in 1st column write 1 to 20 as our bandwidth range.
+#Rename this file as "boxplot.txt".
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#boxplot of bandwidths (x-axis) with squared errors (y-axis) acroass all genes 
+#Based on visual inspection choose narrow bandwidth to find exact one.
+
+y<-as.matrix(read.table("boxplot.txt",header=T,row.names=1))
+png("boxplot.png")
+boxplot(y[,1],y[,2],y[,3],y[,4],y[,5],y[,6],y[,7],y[,8],y[,9],y[,10],y[,11],y[,12],y[,13],y[,14],y[,15],y[,16],y[,17],y[,18],y[,19],y[,20])
+dev.off()
+min_values<-matrix(nrow=nrow(y),ncol=1)
+for(n in 1:100)
+{
+min_values[n,]<-which.min(y[n,])
+}
+write.table(min_values,"minima.txt",sep="\t")
+
+###############%%%%%%%%%%%%%%%%%%%%%%Density plot for finding minima###############################
+d <- density(min_values[,1])
+plot(d)
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#loop withing specific bandwidths or narrow range (nr)....
+#Here u get exact optimum bandwidth. By using that value in below function 
+#you convert all your data into locfit data and used for further analysis.
+
+nr_highly_var<-as.matrix(read.table("highly variable genes.txt",header=T,row.names=1))
+nr_total_data<-nr_highly_var[1:100,]
+nr_error_mat=matrix(nrow = 20, ncol = ncol(nr_total_data)+1,dimnames=list(c(seq(1,20,length.out=20))))
+nr_time=0:(ncol(nr_total_data)-1)
+for(k in 1:nrow(nr_total_data))      #for a single gene
+{
+var<-0
+     for(h in seq(2,4,length.out=20))         #for bandwidth. Here you put minima of 1st loops.
+     {
+     var<-var+1
+     nr_one_gene=as.numeric(nr_total_data[k,])
+	for(j in 1:length(nr_one_gene))          #for cross-validation
+	{
+		
+		y=as.numeric(nr_total_data[k,-j])
+		fit=locfit(y~lp(nr_time[-j],h=h,deg=2))
+
+		if(var < 21)
+		{
+		nr_error_mat[var,j]<-((predict(fit,j)-nr_one_gene[j]))^2	
+		}
+		else{break;}
+	}
+	nr_error_mat[var,(ncol(nr_total_data)+1)]<-sum(nr_error_mat[var,-(ncol(nr_total_data)+1)])
+     }
+write.table(nr_error_mat,"nr_error_file.txt",sep="\t",append=TRUE,row.names=FALSE)
+}
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#This code for Converting data into locfit data using optimum bandwidth value (opt).
+
+highestvariance_nocuts<-as.matrix(read.table("highly variable genes.txt",header=T,row.names=1))
+fitvalues = matrix(nrow = nrow(highestvariance_nocuts), ncol = ncol(highestvariance_nocuts))
+for(i in 1:nrow(highestvariance_nocuts)){
+y = highestvariance_nocuts[i,1:(ncol(total_data))]
+time = (ncol(total_data)-1)
+fit = locfit(y~lp(time,h=opt,deg=2))
+fitvalues[i,] = predict(fit,time);
+}
+fitvalues<-data.frame(fitvalues)
+fitvalues<-cbind(highestgenenames,fitvalues)
+write.table(fitvalues,"LOCFIT data.txt",sep="\t",row.names=FALSE)
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#This code is for getting tmax time point for each genes.
+
+fitvalues<-read.table("S288c highly variable genes.txt",header=T,row.names=1)
+maximum_time_points = c(nrow = nrow(fitvalues));
+for(i in 1:nrow(fitvalues))
+{
+y<-fitvalues[i,]
+maximum_time_points[i]<-which.min(y)
+}
+write.table(maximum_time_points,"Stmin.txt",sep="\t")
+
+
+#############%%%%%%%%%%%%%%%%%%%%################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#Multiple gene plots for comaparing other bandwidth pattern with our optimum bandwidth.
+data<-as.matrix(read.table("highly variable genes.txt",header=T))
+total_data<-as.matrix(data[,-1])
+highestgenenames<-as.matrix(data[,1])
+tiff("1.tiff")
+par(mfrow=c(2,2),xpd=TRUE)
+for(j in 5:8)
+{
+time<-0:12
+y=as.numeric(total_data[j,])
+
+plot(time,y,xlab="time",ylab="intensity value",main=highestgenenames[j,])
+lines(time,y,col="black",lwd=1)
+#fit=locfit(y~lp(time,h=2,deg=2))
+#lines(time,predict(fit,time),col="green",lwd=1)
+fit=locfit(y~lp(time,h=3,deg=2))
+lines(time,predict(fit,time),col="blue",lwd=1)
+fit=locfit(y~lp(time,h=3.84,deg=2))
+lines(time,predict(fit,time),col="red",lwd=2)
+fit=locfit(y~lp(time,h=4,deg=2))
+lines(time,predict(fit,time),col="green",lwd=1)
+#fit=locfit(y~lp(time,h=5,deg=2))
+#lines(time,predict(fit,time),col="violetred3",lwd=1)
+legend(x = "bottomright",inset=0,cex=1,c("h=3","h=3.84","h=4"),fill=c("blue","red","green"))
+}
+dev.off()
+
+
+#row-center the data
+data<-as.matrix(read.table("S288c_LOCFIT data.txt",header=T,row.names=1))
+for(i in 1:nrow(data)){
+    average = mean(as.numeric(data[i,]));
+    for(j in 1:ncol(data)){
+        data[i,j] = as.numeric(as.numeric(data[i,j]) - average);
+    }
+}
